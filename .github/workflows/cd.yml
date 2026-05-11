@@ -1,0 +1,83 @@
+name: CD
+# Continuous Deployment — builds the image, pushes to ECR, and triggers the
+# shared Backstage deploy CodeBuild which updates the GitOps repo, which
+# ArgoCD then syncs to K8s.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write    # required for AWS OIDC assume-role
+  contents: write    # required to commit manifest image-tag bumps
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        market: ["usa"]
+    env:
+      AWS_REGION: us-east-1
+      AWS_ACCOUNT: '381492075615'
+      ROLE_ARN: arn:aws:iam::381492075615:role/BackstageScaffolderRole
+      SERVICE: cpfull-1778507898
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Ensure ECR repository exists
+        run: |
+          aws ecr describe-repositories --repository-names "$SERVICE" --region "$AWS_REGION" >/dev/null 2>&1 \
+            || aws ecr create-repository --repository-name "$SERVICE" --region "$AWS_REGION"
+
+      - name: Build and push image
+        env:
+          MARKET: ${{ matrix.market }}
+          SHA: ${{ github.sha }}
+        run: |
+          IMAGE="${AWS_ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com/${SERVICE}:${SHA}"
+          docker build -t "$IMAGE" -t "${AWS_ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com/${SERVICE}:latest" .
+          docker push "$IMAGE"
+          docker push "${AWS_ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com/${SERVICE}:latest"
+          echo "IMAGE=$IMAGE" >> $GITHUB_ENV
+
+      - name: Trigger shared deploy CodeBuild
+        env:
+          MARKET: ${{ matrix.market }}
+        run: |
+          aws codebuild start-build \
+            --project-name backstage-shared-deploy \
+            --region "$AWS_REGION" \
+            --environment-variables-override \
+              "name=SERVICE,value=${SERVICE},type=PLAINTEXT" \
+              "name=MARKET,value=${MARKET},type=PLAINTEXT" \
+              "name=IMAGE,value=${IMAGE},type=PLAINTEXT" \
+              "name=REPO_ORG,value=priyankaajbhagatt-collab,type=PLAINTEXT" \
+            >/dev/null
+          echo "Triggered backstage-shared-deploy CodeBuild for $SERVICE/$MARKET → $IMAGE"
+
+      - name: Update local deploy manifest (fallback if CodeBuild lags)
+        env:
+          MARKET: ${{ matrix.market }}
+        run: |
+          MANIFEST="deploy/overlays/${MARKET}/deployment.yaml"
+          if [ -f "$MANIFEST" ]; then
+            sed -i.bak "s|image: .*|image: ${IMAGE}|" "$MANIFEST"
+            rm "${MANIFEST}.bak"
+            git config user.name "backstage-bot"
+            git config user.email "backstage-bot@altimetrik.com"
+            git add "$MANIFEST"
+            git diff --staged --quiet || git commit -m "cd: bump ${MARKET} image to ${IMAGE##*:}"
+            git push || echo "(no changes to push)"
+          fi

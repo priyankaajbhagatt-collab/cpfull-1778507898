@@ -1,0 +1,24 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: cpfull-1778507898
+  description: Full E2E demo: GitHub repo → AWS CodePipeline → CodeBuild → ArgoCD → K8s pod
+  annotations:
+    # GitHub Actions tab — workflow runs for this repo
+    github.com/project-slug: priyankaajbhagatt-collab/cpfull-1778507898
+    backstage.io/techdocs-ref: dir:.
+    # ArgoCD tab — lists every app labeled service=<name> (one per market)
+    argocd/app-selector: service=cpfull-1778507898
+    # Kubernetes tab — resources labeled app=<name> in any cluster
+    backstage.io/kubernetes-label-selector: app=cpfull-1778507898
+    # AWS CodePipeline tab — pipelines tagged Service=<name> (Terraform module
+    # emits this tag; only meaningful when ciCdProvider==aws-codepipeline)
+    aws.amazon.com/aws-codepipeline-tags: Service=cpfull-1778507898
+  tags:
+    - java
+    - spring-boot
+spec:
+  type: service
+  lifecycle: experimental
+  owner: user:guest
+  system: devex-scaffolder
