@@ -22,7 +22,7 @@ spec:
           # Placeholder until first CI build pushes a real image.
           # `nginx-unprivileged` listens on 8080 (matches Java/Python/Node runtimes).
           # CD pipeline patches `image:` to ghcr.io/priyankaajbhagatt-collab/cpfull-1778507898:<sha>.
-          image: 381492075615.dkr.ecr.us-east-1.amazonaws.com/cpfull-1778507898:7626e451
+          image: 381492075615.dkr.ecr.us-east-1.amazonaws.com/cpfull-1778507898:399360a3
           ports:
             - containerPort: 8080
           resources:
